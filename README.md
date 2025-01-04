@@ -174,3 +174,53 @@
 
 ## Поехали: 
 
+- Для начала нам нужно создать три ресурса - **yandex_iam_service_account**, **yandex_resourcemanager_folder_iam_member**, **yandex_iam_service_account_static_access_key** и вывести в **output** значения для подключения к S3-баккету - **s3_access_key** и **s3_secret_key**, чтобы потом внест их в наш **main.tf** (правда, пока я не решил, как я распределю создание всей инфраструктуры по ***.tf**-файлам, но, давайте смотреть.
+
+- Для наглядности, в самом начале, создадим три файла:
+
+- **iam_service_account.tf**
+
+```
+resource "yandex_iam_service_account" "sa" {
+  name = var.sa_name
+}
+```
+
+- **iam_service_account_role.tf**
+
+```
+resource "yandex_resourcemanager_folder_iam_member" "sa-admin" {
+  folder_id = var.folder_id
+  role      = "storage.admin"
+  member    = "serviceAccount:${yandex_iam_service_account.sa.id}"
+}
+```
+
+- **iam_service_account_key.tf**
+
+```
+resource "yandex_iam_service_account_static_access_key" "sa-static-key" {
+  service_account_id = yandex_iam_service_account.sa.id
+  description        = "static access key for object storage"
+}
+```
+
+- В данной задаче, нам нужно получить аутпут нескольких ключей, поэтому, на певом этапе **outputs.tf** будет выглядеть вот так:
+
+```
+output "s3_access_key" {
+  description = "Yandex Cloud S3 access key"
+  value       = yandex_iam_service_account_static_access_key.sa-static-key.access_key
+  sensitive   = true
+}
+
+output "s3_secret_key" {
+  description = "Yandex Cloud S3 secret key"
+  value       = yandex_iam_service_account_static_access_key.sa-static-key.secret_key
+  sensitive   = true
+}
+```
+
+ 
+
+ 
