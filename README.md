@@ -1,4 +1,4 @@
-# Дипломный практикум в Yandex.Cloud
+# Дипломный практикум в Yandex.Cloud. Лебедев А.И., FOPS-10
   * [Цели:](#цели)
   * [Этапы выполнения:](#этапы-выполнения)
      * [Создание облачной инфраструктуры](#создание-облачной-инфраструктуры)
@@ -174,25 +174,17 @@
 
 ## Поехали: 
 
-- Для начала нам нужно создать три ресурса - **yandex_iam_service_account**, **yandex_resourcemanager_folder_iam_member**, **yandex_iam_service_account_static_access_key** и вывести в **output** значения для подключения к S3-баккету - **s3_access_key** и **s3_secret_key**, чтобы потом внест их в наш **main.tf** (правда, пока я не решил, как я распределю создание всей инфраструктуры по ***.tf**-файлам, но, давайте смотреть.
+- Для начала нам нужно создать всего два ресурса - **yandex_resourcemanager_folder_iam_member**, **yandex_iam_service_account_static_access_key** и вывести в **output** значения для подключения к S3-баккету - **s3_access_key** и **s3_secret_key**, чтобы потом внести их в наш **main.tf** (правда, пока я не решил, как я распределю создание всей инфраструктуры по ***.tf**-файлам, но, давайте смотреть.
 
-- Для наглядности, в самом начале, создадим три файла:
-
-- **iam_service_account.tf**
-
-```
-resource "yandex_iam_service_account" "sa" {
-  name = var.sa_name
-}
-```
+- Для наглядности, в самом начале, создадим два файла:
 
 - **iam_service_account_role.tf**
 
 ```
-resource "yandex_resourcemanager_folder_iam_member" "sa-admin" {
+resource "yandex_resourcemanager_folder_iam_member" "sa" {
   folder_id = var.folder_id
-  role      = "storage.admin"
-  member    = "serviceAccount:${yandex_iam_service_account.sa.id}"
+  role      = "admin"
+  member = "serviceAccount:${var.service_account_id}"
 }
 ```
 
@@ -200,10 +192,13 @@ resource "yandex_resourcemanager_folder_iam_member" "sa-admin" {
 
 ```
 resource "yandex_iam_service_account_static_access_key" "sa-static-key" {
-  service_account_id = yandex_iam_service_account.sa.id
+  service_account_id = var.service_account_id
   description        = "static access key for object storage"
 }
+
 ```
+
+- Я воспользовался уже имеющимся у меня сервисным аккаунтом и весь сенситив оставил в **terraform.tfvars**
 
 - В данной задаче, нам нужно получить аутпут нескольких ключей, поэтому, на певом этапе **outputs.tf** будет выглядеть вот так:
 
@@ -220,6 +215,12 @@ output "s3_secret_key" {
   sensitive   = true
 }
 ```
+
+- на выходе получаем:
+
+![1](img/1.jpg)  
+
+
 
  
 
