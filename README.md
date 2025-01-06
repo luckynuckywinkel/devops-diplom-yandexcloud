@@ -218,7 +218,160 @@ output "s3_secret_key" {
 
 - На выходе получаем:
 
-![1](img/1.jpg)  
+![1](img/1.jpg)    
+
+ - Отлично. Внесем значение ключей в переменные и создадим баккет -
+
+```
+resource "yandex_storage_bucket" "bucket-diplom" {
+  bucket                = var.bucket_name
+  folder_id             = var.folder_id
+  default_storage_class = "standard"
+  force_destroy         = true
+
+  access_key = var.access_key
+  secret_key = var.secret_key
+}
+```
+
+ - После создания баккета добавим backend, я использовал отдельный файл backend.tf (в дальнейшем, я вывел все из main.tf и backend.tf в один файл, назвав его providers.tf):
+
+```
+terraform {
+  required_providers {
+    yandex = {
+      source = "yandex-cloud/yandex"
+    }
+  }
+  required_version = ">= 1.4"
+
+  backend "s3" {
+    endpoint                    = "https://storage.yandexcloud.net"
+    bucket                      = "bucket-lebedevai"
+    region                      = "ru-central1-b"
+    key                         = "terraform.tfstate"
+    access_key                  = "acces_kay_value"
+    secret_key                  = "secret_key_value"
+    skip_region_validation      = true
+    skip_credentials_validation = true
+
+
+  }
+}
+
+provider "yandex" {
+  token     = var.token
+  cloud_id  = var.cloud_id
+  folder_id = var.folder_id
+  zone      = "ru-central1-b"
+}
+```
+
+- Подружить его с переменными не особо вышло, поэтому данные вносились явно. Переинициализируем терраформ и смотрим в наш баккет:
+
+![2](img/2.JPG)  
+
+ - Все хорошо. Стейт-файл синхронизируется в зависимости от состояния инфраструктуры.
+
+ - Создадим VPC с подсетями в разных зонах доступности, убедимся, что все создается, уничтожается и баккет при этом не страдает.
+
+```
+resource "yandex_vpc_network" "my_vpc" {
+  name = var.VPC_name
+}
+
+resource "yandex_vpc_subnet" "public_subnet" {
+  count = length(var.public_subnet_zones)
+  name  = "${var.public_subnet_name}-${var.public_subnet_zones[count.index]}"
+  v4_cidr_blocks = [
+    cidrsubnet(var.public_v4_cidr_blocks[0], 4, count.index)
+  ]
+  zone       = var.public_subnet_zones[count.index]
+  network_id = yandex_vpc_network.my_vpc.id
+}
+```
+
+ - Переменные на текущий момент времени:
+
+```
+### main
+
+variable "token" {
+  description = "Yandex Cloud OAuth token"
+  type        = string
+}
+
+variable "cloud_id" {
+  description = "Yandex Cloud ID"
+  type        = string
+}
+
+variable "folder_id" {
+  description = "Yandex Folder ID"
+  type        = string
+}
+
+variable "service_account_id" {
+  description = "Yandex Service account ID"
+  type    = string
+
+}
+
+variable "access_key" {
+  description = "S3 Bucket access key"
+  type    = string
+
+}
+
+variable "secret_key" {
+  description = "S3 Bucket private key"
+  type    = string
+
+}
+
+variable "bucket_name" {
+  type = string
+  default = "bucket-lebedevai"
+
+}
+
+### vpc
+
+variable "VPC_name" {
+  type        = string
+  default     = "my-vpc"
+}
+
+### subnet
+
+variable "public_subnet_name" {
+  type        = string
+  default     = "public"
+}
+
+variable "public_v4_cidr_blocks" {
+  type        = list(string)
+  default     = ["192.168.1.0/24"]
+}
+
+variable "subnet_zone" {
+  type        = string
+  default     = "ru-central1"
+}
+
+variable "public_subnet_zones" {
+  type    = list(string)
+  default = ["ru-central1-a", "ru-central1-b",  "ru-central1-d"]
+}
+```
+
+ - Вывод outputs:
+
+![2](img/2.JPG)   
+
+ - Все хорошо, после дестроя - баккет и синхронизированный с ним *.tfstate остаются в порядке.
+
+
 
 
 
