@@ -367,9 +367,270 @@ variable "public_subnet_zones" {
 
  - Вывод outputs:
 
-![2](img/2.JPG)   
+![3](img/3.JPG)   
 
  - Все хорошо, после дестроя - баккет и синхронизированный с ним *.tfstate остаются в порядке.
+
+---
+### Создание Kubernetes кластера
+
+На этом этапе необходимо создать [Kubernetes](https://kubernetes.io/ru/docs/concepts/overview/what-is-kubernetes/) кластер на базе предварительно созданной инфраструктуры.   Требуется обеспечить доступ к ресурсам из Интернета.
+
+Это можно сделать двумя способами:
+
+1. Рекомендуемый вариант: самостоятельная установка Kubernetes кластера.  
+   а. При помощи Terraform подготовить как минимум 3 виртуальных машины Compute Cloud для создания Kubernetes-кластера. Тип виртуальной машины следует выбрать самостоятельно с учётом требовании к производительности и стоимости. Если в дальнейшем поймете, что необходимо сменить тип инстанса, используйте Terraform для внесения изменений.  
+   б. Подготовить [ansible](https://www.ansible.com/) конфигурации, можно воспользоваться, например [Kubespray](https://kubernetes.io/docs/setup/production-environment/tools/kubespray/)  
+   в. Задеплоить Kubernetes на подготовленные ранее инстансы, в случае нехватки каких-либо ресурсов вы всегда можете создать их при помощи Terraform.
+2. Альтернативный вариант: воспользуйтесь сервисом [Yandex Managed Service for Kubernetes](https://cloud.yandex.ru/services/managed-kubernetes)  
+  а. С помощью terraform resource для [kubernetes](https://registry.terraform.io/providers/yandex-cloud/yandex/latest/docs/resources/kubernetes_cluster) создать **региональный** мастер kubernetes с размещением нод в разных 3 подсетях      
+  б. С помощью terraform resource для [kubernetes node group](https://registry.terraform.io/providers/yandex-cloud/yandex/latest/docs/resources/kubernetes_node_group)
+  
+Ожидаемый результат:
+
+1. Работоспособный Kubernetes кластер.
+2. В файле `~/.kube/config` находятся данные для доступа к кластеру.
+3. Команда `kubectl get pods --all-namespaces` отрабатывает без ошибок.
+
+## Поехали:  
+
+- В **terraform** добавим конфигурации для одной мастер-ноды и двух воркеров:
+
+- Добавление в **infrastructure.tf**:
+
+```
+# Topic 2
+
+resource "yandex_compute_instance" "master-node" {
+  name            = var.master_name
+  platform_id     = var.platform
+  zone            = var.public_subnet_zones[0]
+  resources {
+    cores         = var.master_core
+    memory        = var.master_memory
+    core_fraction = var.master_core_fraction
+  }
+
+  boot_disk {
+    initialize_params {
+      image_id = var.image_id
+      size     = var.master_disk_size
+    }
+  }
+
+  scheduling_policy {
+    preemptible = var.scheduling_policy
+  }
+
+  network_interface {
+    subnet_id = yandex_vpc_subnet.public_subnet[0].id
+    nat       = var.nat
+  }
+
+  metadata = {
+    user-data = "${file("./meta.yaml")}"
+
+ }
+}
+
+resource "yandex_compute_instance" "worker" {
+  count           = var.worker_count
+  name            = "worker-node-${count.index + 1}"
+  platform_id     = var.worker_platform
+  zone = var.public_subnet_zones[count.index]
+  resources {
+    cores         = var.worker_cores
+    memory        = var.worker_memory
+    core_fraction = var.worker_core_fraction
+  }
+
+  boot_disk {
+    initialize_params {
+      image_id = var.image_id
+      size     = var.worker_disk_size
+    }
+  }
+
+    scheduling_policy {
+    preemptible = var.scheduling_policy
+  }
+
+  network_interface {
+    subnet_id = yandex_vpc_subnet.public_subnet[count.index].id
+    nat       = var.nat
+  }
+
+  metadata = {
+    user-data = "${file("./meta.yaml")}"
+
+ }
+}
+```
+
+- Добавление в **variables.tf**:
+
+```
+#Topic 2
+
+
+variable "master_name" {
+  type        = string
+  default     = "control-plane"
+}
+
+variable "platform" {
+  type        = string
+  default     = "standard-v1"
+}
+
+variable "master_core" {
+  type        = number
+  default     = "4"
+}
+
+variable "master_memory" {
+  type        = number
+  default     = "8"
+}
+
+variable "master_core_fraction" {
+  description = "guaranteed vCPU, for yandex cloud - 20, 50 or 100 "
+  type        = number
+  default     = "20"
+}
+
+variable "master_disk_size" {
+  type        = number
+  default     = "50"
+}
+
+variable "image_id" {
+  type        = string
+  default     = "fd893ak78u3rh37q3ekn"
+}
+
+variable "scheduling_policy" {
+  type        = bool
+  default     = "true"
+}
+
+
+### worker nodes vars
+
+variable "worker_count" {
+  type        = number
+  default     = "2"
+}
+
+variable "worker_platform" {
+  type        = string
+  default     = "standard-v1"
+}
+
+variable "worker_cores" {
+  type        = number
+  default     = "4"
+}
+
+variable "worker_memory" {
+  type        = number
+  default     = "2"
+}
+
+variable "worker_core_fraction" {
+  description = "guaranteed vCPU, for yandex cloud - 20, 50 or 100 "
+  type        = number
+  default     = "20"
+}
+
+variable "worker_disk_size" {
+  type        = number
+  default     = "50"
+}
+
+variable "nat" {
+  type        = bool
+  default     = "true"
+}
+```
+
+- Клауд-инит файл **meta.yaml**:
+
+```
+#cloud-config
+users:
+  - name: lebedevai
+    ssh_authorized_keys:
+      - ssh-rsa MY_PUBLIC_RSA_KEY_VALUE
+    sudo: ['ALL=(ALL) NOPASSWD:ALL']
+    groups: sudo
+    shell: /bin/bash
+package_update: true
+package_upgrade: true
+packages:
+  - nginx
+  - nano
+  - software-properties-common
+runcmd:
+  - mkdir -p /home/lebedevai/.ssh
+  - chown -R lebedevai:lebedevai /home/lebedevai/.ssh
+  - chmod 700 /home/lebedevai/.ssh
+  - sudo add-apt-repository ppa:deadsnakes/ppa -y
+  - sudo apt-get update
+```
+
+- Проверяем весь этот колхоз:
+
+```
+Apply complete! Resources: 3 added, 0 changed, 3 destroyed.
+
+Outputs:
+
+master_node_external_ip = "51.250.11.117"
+master_node_internal_ip = "192.168.1.3"
+master_node_name = "control-plane"
+subnet_ids = [
+  "e9b187rh2935c865tr5j",
+  "e2lkvo2q32834gbotk2j",
+  "fl8igk31bjj1rj4s775f",
+]
+subnet_ips = [
+  tolist([
+    "192.168.1.0/28",
+  ]),
+  tolist([
+    "192.168.1.16/28",
+  ]),
+  tolist([
+    "192.168.1.32/28",
+  ]),
+]
+subnet_names = [
+  "public-ru-central1-a",
+  "public-ru-central1-b",
+  "public-ru-central1-d",
+]
+subnet_zones = tolist([
+  "ru-central1-a",
+  "ru-central1-b",
+  "ru-central1-d",
+])
+vpc_name = "my-vpc"
+worker_nodes_external_ips = [
+  "89.169.149.59",
+  "89.169.163.228",
+]
+worker_nodes_internal_ips = [
+  "192.168.1.13",
+  "192.168.1.22",
+]
+worker_nodes_names = [
+  "worker-node-1",
+  "worker-node-2",
+]
+```
+
+![4](img/4.JPG)
 
 
 
