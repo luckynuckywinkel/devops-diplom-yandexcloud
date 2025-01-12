@@ -1,0 +1,20 @@
+#cloud-config
+ 2 users:
+ 3   - name: lebedevai
+ 4     ssh_authorized_keys:
+ 5       - ssh-rsa <my_key>
+ 6     sudo: ['ALL=(ALL) NOPASSWD:ALL']
+ 7     groups: sudo
+ 8     shell: /bin/bash
+ 9 package_update: true
+10 package_upgrade: true
+11 packages:
+12   - nginx
+13   - nano
+14   - software-properties-common
+15 runcmd:
+16   - mkdir -p /home/lebedevai/.ssh
+17   - chown -R lebedevai:lebedevai /home/lebedevai/.ssh
+18   - chmod 700 /home/lebedevai/.ssh
+19   - sudo add-apt-repository ppa:deadsnakes/ppa -y
+20   - sudo apt-get update
