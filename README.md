@@ -730,7 +730,155 @@ Http доступ на 80 порту к тестовому приложению.
 
 ## Поехали:  
 
-- 
+- Устанавливаем Helm на мастер-ноду, создаем неймспейс для нашего мониторинга, добавляем репозиторий для нашего стэка:
+
+```
+root@node1:/home/lebedevai# curl https://raw.githubusercontent.com/helm/helm/master/scripts/get-helm-3 | bash
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+100 11903  100 11903    0     0  81527      0 --:--:-- --:--:-- --:--:-- 80972
+[WARNING] Could not find git. It is required for plugin installation.
+Downloading https://get.helm.sh/helm-v3.16.4-linux-amd64.tar.gz
+Verifying checksum... Done.
+Preparing to install helm into /usr/local/bin
+helm installed into /usr/local/bin/helm
+root@node1:/home/lebedevai# kubectl create namespace monitoring
+namespace/monitoring created
+root@node1:/home/lebedevai# helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+"prometheus-community" has been added to your repositories
+```
+
+- ...и устанавливаем стэк и смотрим поды:
+
+```
+root@node1:/home/lebedevai# helm install prometheus prometheus-community/kube-prometheus-stack -n monitoring
+NAME: prometheus
+LAST DEPLOYED: Sun Jan 12 14:05:19 2025
+NAMESPACE: monitoring
+STATUS: deployed
+REVISION: 1
+NOTES:
+kube-prometheus-stack has been installed. Check its status by running:
+  kubectl --namespace monitoring get pods -l "release=prometheus"
+
+Visit https://github.com/prometheus-operator/kube-prometheus for instructions on how to create & configure Alertmanager and Prometheus instances using the Operator.
+root@node1:/home/lebedevai# kubectl get pods -n monitoring
+NAME                                                     READY   STATUS    RESTARTS   AGE
+alertmanager-prometheus-kube-prometheus-alertmanager-0   2/2     Running   0          57s
+prometheus-grafana-578946f5d5-frk7c                      2/3     Running   0          66s
+prometheus-kube-prometheus-operator-77c497f59f-jq49j     1/1     Running   0          66s
+prometheus-kube-state-metrics-6f5574c548-4t7bl           1/1     Running   0          66s
+prometheus-prometheus-kube-prometheus-prometheus-0       2/2     Running   0          57s
+prometheus-prometheus-node-exporter-26nnj                1/1     Running   0          66s
+prometheus-prometheus-node-exporter-hmhn9                1/1     Running   0          66s
+prometheus-prometheus-node-exporter-nxh28                1/1     Running   0          66s
+```
+
+- Получаем пасс от графаны:
+
+```
+root@node1:/home/lebedevai# kubectl get secret -n monitoring prometheus-grafana -o jsonpath="{.data.admin-password}" | base64 --decode ; echo
+```
+
+- Создаем values.yaml, чтобы сделать гафану доступной и апгрейдим стэк, подкинув новый values:
+
+```
+#values.yaml
+grafana:
+  service:
+    type: NodePort
+    nodePort: 32000
+```
+
+```
+root@node1:/home/lebedevai# helm upgrade prometheus prometheus-community/kube-prometheus-stack -n monitoring -f values.yaml
+Release "prometheus" has been upgraded. Happy Helming!
+NAME: prometheus
+LAST DEPLOYED: Sun Jan 12 14:10:56 2025
+NAMESPACE: monitoring
+STATUS: deployed
+REVISION: 2
+NOTES:
+kube-prometheus-stack has been installed. Check its status by running:
+  kubectl --namespace monitoring get pods -l "release=prometheus"
+```
+
+- Идем в прометеус. Сразу подгружаем дашборд, который создан специально для мониторинга кубернетес-кластера. Пока все не особо информативно, но, скажем, и дефолтные дашборды - норм:
+
+ ![10](img/grafana_enter.JPG)   
+
+ ![11](img/grafana_metric1.JPG)  
+
+ ![12](img/grafana_metric2.JPG)    
+
+- Теперь необходимо создать и раздеплоить имеющийся сервис у нас в кластере. Для этого скормим кубернетесу несколько ямлов:
+
+```
+#deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-diploma
+  labels:
+    app: nginx-diploma
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: nginx-diploma
+  template:
+    metadata:
+      labels:
+        app: nginx-diploma
+    spec:
+      containers:
+        - name: nginx
+          image: luckynucky/nginx-diploma:latest
+          ports:
+            - containerPort: 80
+```
+
+```
+#service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx-diploma
+  labels:
+    app: nginx-diploma
+spec:
+  type: NodePort
+  ports:
+    - port: 80
+      targetPort: 80
+      nodePort: 32001
+  selector:
+    app: nginx-diploma
+```
+
+- Выполним и проверим:
+
+```
+root@node1:/home/lebedevai# kubectl apply -f deployment.yaml
+deployment.apps/nginx-diploma created
+root@node1:/home/lebedevai# kubectl apply -f service.yaml
+service/nginx-diploma created
+root@node1:/home/lebedevai# kubectl get pods -l app=nginx-diploma
+NAME                             READY   STATUS    RESTARTS   AGE
+nginx-diploma-85c6f56448-c6pcj   1/1     Running   0          56s
+nginx-diploma-85c6f56448-f5b5w   1/1     Running   0          56s
+nginx-diploma-85c6f56448-sqhcn   1/1     Running   0          56s
+```
+
+![13](img/page.JPG)   
+
+---
+
+
+
+
+
+
 
 
 
