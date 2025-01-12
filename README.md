@@ -630,7 +630,38 @@ worker_nodes_names = [
 ]
 ```
 
-![4](img/4.JPG)
+![4](img/4.JPG)  
+
+- Для установки Kubernetes-кластера нам потребуется рабочая машина, на которой будет **python3-pip**, **ansible** и **git**. Думаю, логично, что рабочая машина будет та же, где у нас живет и **Terraform**.
+
+- Признаться, это было нелегко. Т.к. я использовал старую виртуальную машину с устаревшим Debian, сразу же возникли проблемы с совместимостями ansible + python3. По итогу, выбрал путь через виртуальную среду **(ansible-venv)**.
+
+- По итогу, имеем следующий инвентарник:
+
+```
+[all]
+node1 ansible_host=158.160.52.182   ansible_user=lebedevai ansible_ssh_private_key_file=/home/vagrant/diplom/ykey # ip=192.168.1.3  etcd_member_name=etcd1
+node2 ansible_host=130.193.48.10  ansible_user=lebedevai ansible_ssh_private_key_file=/home/vagrant/diplom/ykey # ip=192.168.1.13 etcd_member_name=etcd2
+node3 ansible_host=89.169.170.166  ansible_user=lebedevai ansible_ssh_private_key_file=/home/vagrant/diplom/ykey # ip=192.168.1.22 etcd_member_name=etcd3
+
+[kube_control_plane]
+node1
+
+[etcd]
+ node1
+
+[kube_node]
+node2
+node3
+
+[calico_rr]
+
+[k8s_cluster:children]
+kube_control_plane
+kube_node
+calico_rr
+```
+
 
 
 
