@@ -872,7 +872,102 @@ nginx-diploma-85c6f56448-sqhcn   1/1     Running   0          56s
 
 ![13](img/page.JPG)   
 
----
+---  
+
+### Установка и настройка CI/CD
+
+Осталось настроить ci/cd систему для автоматической сборки docker image и деплоя приложения при изменении кода.
+
+Цель:
+
+1. Автоматическая сборка docker образа при коммите в репозиторий с тестовым приложением.
+2. Автоматический деплой нового docker образа.
+
+Можно использовать [teamcity](https://www.jetbrains.com/ru-ru/teamcity/), [jenkins](https://www.jenkins.io/), [GitLab CI](https://about.gitlab.com/stages-devops-lifecycle/continuous-integration/) или GitHub Actions.
+
+Ожидаемый результат:
+
+1. Интерфейс ci/cd сервиса доступен по http.
+2. При любом коммите в репозиторие с тестовым приложением происходит сборка и отправка в регистр Docker образа.
+3. При создании тега (например, v1.0.0) происходит сборка и отправка с соответствующим label в регистри, а также деплой соответствующего Docker образа в кластер Kubernetes.
+
+## Поехали:  
+
+- Пожалуй, это было самым сложным заданием из всего листа. давайте посмотрим, что получилось.
+
+- Я немного затупил и изначально создал репозиторий в гитхабе, благо, гитлаб позволяет сделать импорт и вот наш [репозиторий](https://gitlab.com/luckynuckywinkel/nginx)
+
+- В папку **/kube** были добавлены два ямла - deployment и service, которые пригодятся нам в нашем пайпе.
+
+- Сам пайп выглядит вот так:
+
+```
+stages:
+  - build
+  - deploy
+
+variables:
+  IMAGE_TAG_LATEST: latest
+  VERSION: ${CI_COMMIT_TAG}
+  DEPLOYMENT_NAME: "nginx-diploma"
+
+build:
+  stage: build
+  image: docker:latest
+  services:
+    - name: docker:dind
+      alias: dockerhost
+      entrypoint: ["dockerd-entrypoint.sh", "--tls=false"]
+  variables:
+    DOCKER_HOST: tcp://dockerhost:2375/
+    DOCKER_DRIVER: overlay2
+    DOCKER_TLS_CERTDIR: ""
+  script:
+    - docker login -u ${DOCKER_USER} -p ${DOCKER_PASSWORD}
+    - if [ -z "$VERSION" ]; then VERSION=${IMAGE_TAG_LATEST}; fi
+    - docker build -t ${DOCKER_USER}/${IMAGE_NAME}:${VERSION} --platform linux/amd64 -f Dockerfile .
+    - docker push ${DOCKER_USER}/${IMAGE_NAME}:${VERSION}
+
+deploy:
+  stage: deploy
+  image: luckynucky/kubectl_custom:latest
+  only:
+    - master
+    - tags
+  before_script:
+    - apk add --no-cache bash  
+  script:
+    - echo "Deploying to Kubernetes..."
+    - echo $KUBE_CONFIG | base64 -d > kubeconfig
+    - export KUBECONFIG=kubeconfig
+    - kubectl apply -f kube/ --insecure-skip-tls-verify=true
+    - if [ -z "$VERSION" ]; then VERSION=$IMAGE_TAG_LATEST; fi
+    - kubectl set image deployment/${DEPLOYMENT_NAME} ${CONTAINER}=${DOCKER_USER}/${IMAGE_NAME}:${VERSION} --insecure-skip-tls-verify=true
+    - kubectl rollout restart deployment/${DEPLOYMENT_NAME} --insecure-skip-tls-verify=true
+    - kubectl rollout status deployment/${DEPLOYMENT_NAME} --insecure-skip-tls-verify=true
+  when: on_success
+```
+
+- Что я могу сказать. Начнем с того, что мне пришлось кастомизировать образ, используемый при стейдже **deploy**, т.к. в изначальном образе не было оболочки shell. Я взял за основу alpine, как полноценную легковесную систему и допилил туда kubectl.
+
+- Я не использовал зарегистрированные раннеры и все пилил на **shared-runners**. Не переживайте, я знаю, как регистрировать раннеры, но, захотелось попробовать, а выйдет ли без них...
+
+- Да, вышло, но, я немного сжульничал. Ввиду того, что при создании кубернетес-кластера он не создал сертификата для внешнего ip моей мастер-ноды, в шаге деплой почти для каждого скрипта пришлось добавить опцию - *--insecure-skip-tls-verify=true*. Да, знаю, возможно, это не свосем правильно и я посомтрел, как создать сертификат для внешнего ip, но я очень боюсь развалить кластер. Да, я пересоберу все потом, но, ввиду сжатых сроков, восстановить в один момент я его не смогу.
+
+- Еще одно интересное замечание, у нас есть классические стейджи - build и deploy (я так и оставил по привычке, пусть), но, по факту, мы имеем, скорее, два деплоя. Первый стейдж пушит нам изменения в имейдже в доккрхаб, а второй стэйдж - в наш кластер. Так что, можно было бы и обозвать их по-другому.
+
+- Собственно, результат. Изменим заглавное описание в index.html в гитлабе. Стэйджи:
+
+ ![14](img/pipe.JPG)  
+
+ - Видим, что образ в хабе обновился:
+
+ ![15](img/dh.JPG)  
+
+  - Видим, что контент сайта обновился:
+
+![16](img/nomad.JPG)  
+
 
 
 
