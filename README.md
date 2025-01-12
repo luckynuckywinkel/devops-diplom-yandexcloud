@@ -648,7 +648,7 @@ node3 ansible_host=89.169.170.166  ansible_user=lebedevai ansible_ssh_private_ke
 node1
 
 [etcd]
- node1
+node1
 
 [kube_node]
 node2
@@ -661,6 +661,16 @@ kube_control_plane
 kube_node
 calico_rr
 ```
+
+- Кластер поднимался довольно долго, но, по итогу, вроде бы, все хорошо и все зеленое:
+
+![5](img/5.JPG)  
+
+ - Зайдем на контрол-нодц и проверим:
+
+![6](img/6.JPG)   
+
+ - Кластер kubernetes развернут.
 
 
 
